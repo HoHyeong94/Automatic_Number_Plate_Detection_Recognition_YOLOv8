@@ -67,18 +67,22 @@ class LoadStreams:
     def update(self, i, cap, stream):
         # Read stream `i` frames in daemon thread
         n, f = 0, self.frames[i]  # frame number, frame array
-        while cap.isOpened() and n < f:
-            n += 1
-            cap.grab()  # .read() = .grab() followed by .retrieve()
-            if n % self.vid_stride == 0:
-                success, im = cap.retrieve()
-                if success:
-                    self.imgs[i] = im
-                else:
-                    LOGGER.warning('WARNING ⚠️ Video stream unresponsive, please check your IP camera connection.')
-                    self.imgs[i] = np.zeros_like(self.imgs[i])
-                    cap.open(stream)  # re-open stream if signal was lost
-            time.sleep(0.0)  # wait time
+        while True:
+            if cap is None or not cap.isOpened():
+                cap = cv2.VideoCapture(stream, cv2.CAP_FFMPEG)
+
+            while cap.isOpened() and n < f:
+                n += 1
+                cap.grab()  # .read() = .grab() followed by .retrieve()
+                if n % self.vid_stride == 0:
+                    success, im = cap.retrieve()
+                    if success:
+                        self.imgs[i] = im
+                    else:
+                        LOGGER.warning('WARNING ⚠️ Video stream unresponsive, please check your IP camera connection.')
+                        self.imgs[i] = np.zeros_like(self.imgs[i])
+                        cap.open(stream)  # re-open stream if signal was lost
+                time.sleep(0.0)  # wait time
 
     def __iter__(self):
         self.count = -1

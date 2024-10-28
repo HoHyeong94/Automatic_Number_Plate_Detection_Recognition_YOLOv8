@@ -40,6 +40,8 @@ from ultralytics.yolo.utils.checks import check_file, check_imgsz, check_imshow
 from ultralytics.yolo.utils.files import increment_path
 from ultralytics.yolo.utils.torch_utils import select_device, smart_inference_mode
 
+from LPRNet.predict import OcrPredictor
+
 
 class BasePredictor:
     """
@@ -156,14 +158,18 @@ class BasePredictor:
         self.done_setup = True
         self.device = device
 
+        self.ocr = OcrPredictor()
+        self.existed_blob = []
+
         return model
 
     @smart_inference_mode()
-    def __call__(self, source=None, model=None):
+    def __call__(self, source=None, model=None, queue=None):
         self.run_callbacks("on_predict_start")
+        # print("queue", queue is not None)
         model = self.model if self.done_setup else self.setup(source, model)
         model.eval()
-        self.seen, self.windows, self.dt = 0, [], (ops.Profile(), ops.Profile(), ops.Profile())
+        self.seen, self.windows, self.dt = 0, [], (ops.Profile(), ops.Profile(), ops.Profile(), ops.Profile())
         self.all_outputs = []
         for batch in self.dataset:
             self.run_callbacks("on_predict_batch_start")
@@ -186,24 +192,22 @@ class BasePredictor:
                 if self.webcam:
                     path, im0s = path[i], im0s[i]
                 p = Path(path)
-                s += self.write_results(i, preds, (p, im, im0s))
-
+                s += self.write_results(i, preds, (p, im, im0s), queue)
                 if self.args.show:
                     self.show(p)
-
                 if self.args.save:
                     self.save_preds(vid_cap, i, str(self.save_dir / p.name))
 
             # Print time (inference-only)
-            LOGGER.info(f"{s}{'' if len(preds) else '(no detections), '}{self.dt[1].dt * 1E3:.1f}ms")
+            # LOGGER.info(f"{s}{'' if len(preds) else '(no detections), '}{self.dt[1].dt * 1E3:.1f}ms")
 
             self.run_callbacks("on_predict_batch_end")
 
         # Print results
         t = tuple(x.t / self.seen * 1E3 for x in self.dt)  # speeds per image
-        LOGGER.info(
-            f'Speed: %.1fms pre-process, %.1fms inference, %.1fms postprocess per image at shape {(1, 3, *self.imgsz)}'
-            % t)
+        # LOGGER.info(
+        #     f'Speed: %.1fms pre-process, %.1fms inference, %.1fms postprocess per image at shape {(1, 3, *self.imgsz)}'
+        #     % t)
         if self.args.save_txt or self.args.save:
             s = f"\n{len(list(self.save_dir.glob('labels/*.txt')))} labels saved to {self.save_dir / 'labels'}" if self.args.save_txt else ''
             LOGGER.info(f"Results saved to {colorstr('bold', self.save_dir)}{s}")

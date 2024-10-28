@@ -2,6 +2,8 @@
 
 from copy import copy
 
+import os
+
 import hydra
 import torch
 import torch.nn as nn
@@ -199,8 +201,14 @@ class Loss:
 def train(cfg):
     cfg.model = cfg.model or "yolov8n.yaml"
     cfg.data = cfg.data or "coco128.yaml"  # or yolo.ClassificationDataset("mnist")
+    cfg.device = '0'
+    torch.backends.cudnn.enabled = False # https://github.com/ultralytics/ultralytics/issues/1149#issuecomment-1467075010
+    # cfg.batch = -1
+    # cfg.save = True
+    # cfg.amp = False
     # trainer = DetectionTrainer(cfg)
     # trainer.train()
+    os.environ['KMP_DUPLICATE_LIB_OK']='True' # https://stackoverflow.com/questions/20554074/sklearn-omp-error-15-initializing-libiomp5md-dll-but-found-mk2iomp5md-dll-a
     from ultralytics import YOLO
     model = YOLO(cfg.model)
     model.train(**cfg)
