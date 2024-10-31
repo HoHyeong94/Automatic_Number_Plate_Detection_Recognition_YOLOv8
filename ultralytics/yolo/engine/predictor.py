@@ -41,6 +41,7 @@ from ultralytics.yolo.utils.files import increment_path
 from ultralytics.yolo.utils.torch_utils import select_device, smart_inference_mode
 
 from LPRNet.predict import OcrPredictor
+# from tracker import Tracker
 
 
 class BasePredictor:
@@ -160,6 +161,8 @@ class BasePredictor:
 
         self.ocr = OcrPredictor()
         self.existed_blob = []
+        # self.tracker = Tracker()
+        self.track_id = 1
 
         return model
 
@@ -187,6 +190,8 @@ class BasePredictor:
             # postprocess
             with self.dt[2]:
                 preds = self.postprocess(preds, im, im0s)
+
+            self.send_ocr_result(queue)
 
             for i in range(len(im)):
                 if self.webcam:

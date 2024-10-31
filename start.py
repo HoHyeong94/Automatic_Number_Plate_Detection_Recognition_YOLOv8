@@ -1,30 +1,23 @@
-import os
 from asyncio import Queue, create_task, run, gather, run_coroutine_threadsafe, get_event_loop
 from multiprocessing import Process, Pipe, Queue as MpQueue
 from threading import Thread
 from argparse import ArgumentParser
-# from io import BytesIO
-# from datetime import datetime, timezone
 
-# import cv2 as cv
-# import numpy as np
 from dotenv import load_dotenv
-# for Test
 
-# from paddleocr import OpenVinoPaddleOCR
 from sync_v3 import ConnectProcess
-
-# import time
-# import PIL.Image as Image
 
 from ultralytics.yolo.v8.detect.predict import predict
 
 async def fetchWorker(queue):
     print("EXECUTED::fetchworker")
-    # targetid = os.getenv("targetid")
-    targetid = "6gZ8Xn5hl0110Eu8APM6UGgEBZ6HwZSbMpTg2ZYoqlo"
-    domain = os.getenv("domain", default="NEXIVIL-dabeom.local")
-    protocol = os.getenv("protocol", default="https")
+    # targetid = os.getenv("targetid", default="6gZ8Xn5hl0110Eu8APM6UGgEBZ6HwZSbMpTg2ZYoqlo")
+    # domain = os.getenv("domain", default="NEXIVIL-dabeom.local")
+    # protocol = os.getenv("protocol", default="https")
+
+    targetid = args.targetid
+    protocol = args.protocol
+    domain = args.domain
     
     print("targetid", targetid)
     print("domain", domain)
@@ -74,24 +67,16 @@ async def main():
     WIP: Migrate redis(dragonfly) or any Task-Queue system and then Apply multiprocessing
     Piping bwtween workers and Main Process
     '''
-    # cctv_rx, cctv_tx = Pipe(duplex=False)
     mp_queue = MpQueue()
 
     procs = []
-    det_in_out_process = Process(target=predict, args=(mp_queue,))
+    det_in_out_process = Process(target=predict, args=(mp_queue, args.rtsp, args.exit_direct))
     procs.append(det_in_out_process)
-    # capture_lp_process = Process(target=process_capture, args=(cctv_rx, mp_queue,))
-    # procs.append(capture_lp_process)
 
     det_in_out_process.start()
-    # capture_lp_process.start()
 
     print(f'det_pid: {det_in_out_process.ident}')
-    # print(f'cap_pid: {capture_lp_process.ident}')
 
-    # tasks.append(create_task(process_video(rtsp, x1=x1, x2=x2, y1=y1, y2=y2, thickness=thickness)))
-
-    # asyncio_queue = Queue()
     fetch_queue = Queue()
 
     # Get the current event loop
@@ -105,7 +90,6 @@ async def main():
 
     tasks = []
     tasks.append(create_task(fetchWorker(fetch_queue)))
-    # tasks.append(create_task(tasksWorker(asyncio_queue, fetch_queue)))
     await gather(*tasks, return_exceptions=True)
 
     stop_loop = True
@@ -129,7 +113,12 @@ if __name__ == "__main__":
         description='',
         epilog='')
     parser.add_argument('-w', '--worker', default=1, type=int)
-
+    parser.add_argument("--rtsp", type=str, required=False, default="rtsp://admin:adt@2102@223.48.2.77:554/cam/realmonitor?channel=1&subtype=1")
+    parser.add_argument("--targetid", type=str, required=False, default="6gZ8Xn5hl0110Eu8APM6UGgEBZ6HwZSbMpTg2ZYoqlo")
+    parser.add_argument("--protocol", type=str, required=False, default="https")
+    parser.add_argument("--domain", type=str, required=False, default="NEXIVIL-dabeom.local")
+    parser.add_argument("--exit_direct", type=str, required=False, default="right")
+    
     args = parser.parse_args()
 
     run(main())

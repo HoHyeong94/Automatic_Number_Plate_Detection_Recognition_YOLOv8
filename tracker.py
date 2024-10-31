@@ -48,10 +48,11 @@ class Tracker:
             if not track.is_confirmed() or track.time_since_update > 1:
                 continue
             bbox = track.to_tlbr()
+            mean = track.mean # [x, y, a, h, vx, vy, va, vh]
 
             id = track.track_id
 
-            tracks.append(Track(id, bbox))
+            tracks.append(Track(id, bbox, mean))
 
         self.tracks = tracks
 
@@ -59,7 +60,15 @@ class Tracker:
 class Track:
     track_id = None
     bbox = None
+    mean = None
 
-    def __init__(self, id, bbox):
+    def __init__(self, id, bbox, mean):
         self.track_id = id
         self.bbox = bbox
+        self.mean = mean
+
+# pip install numpy==1.23.0
+# pip install scikit-learn==0.22.2
+# pip install tensorflow==2.11.0
+# pip install scikit-image==0.19.3
+# pip install filterpy==1.4.5

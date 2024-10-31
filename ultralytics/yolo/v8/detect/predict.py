@@ -9,28 +9,25 @@ from ultralytics.yolo.utils.checks import check_imgsz
 from ultralytics.yolo.utils.plotting import Annotator, colors, save_one_box
 
 # import cv2
-# from paddleocr import PaddleOCR
-import os
+# import os
 import re
 from ultralytics.yolo.configs import get_config
 import yaml
 from datetime import datetime, timezone
 from io import BytesIO
 import PIL.Image as Image
-# from LPRNet.predict import OcrPredictor
 import math
 from collections import Counter
 
-
-# ocr = PaddleOCR(use_angle_cls=True, lang='korean', use_gpu=0, show_log=False)
 
 def distance_between_points(point1, point2):
     dx = point1[0] - point2[0]
     dy = point1[1] - point2[1]
     return math.sqrt(dx ** 2 + dy ** 2)
 
+exit_direction = "right"
 class TrackBlob:
-    def __init__(self, bbox, txt, full_img, crop_img):
+    def __init__(self, bbox, txt, full_img, crop_img, track_id):
         self.bbox = [bbox]
         self.centerPosition = [( (bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2 )]
         self.dblCurrentDiagonalSize = [math.sqrt((bbox[2] - bbox[0])**2 + (bbox[3] - bbox[1])**2)]
@@ -38,6 +35,14 @@ class TrackBlob:
         self.full_img = [full_img]
         self.crop_img = [crop_img]
         self.frame_num = 0
+        self.delta_x = []
+        self.count_positive_delta_x = 0
+        self.count_negative_delta_x = 0
+        self.delta_y = []
+        self.count_positive_delta_y = 0
+        self.count_negative_delta_y = 0
+        self.predictedNextPosition = ()
+        self.track_id = track_id
 
     def update(self, bbox, txt, full_img, crop_img):
         self.bbox.append(bbox)
@@ -47,6 +52,62 @@ class TrackBlob:
         self.full_img.append(full_img)
         self.crop_img.append(crop_img)
         self.frame_num = 0
+
+        centerPosition_length = len(self.centerPosition)
+        if centerPosition_length > 2:
+            dx = self.centerPosition[-1][0] - self.centerPosition[centerPosition_length - 2][0]
+            dy = self.centerPosition[-1][1] - self.centerPosition[centerPosition_length - 2][1]
+            
+            self.count_positive_delta_x += dx > 0
+            self.count_negative_delta_x += dx < 0
+
+            self.count_positive_delta_y += dy > 0
+            self.count_negative_delta_y += dy < 0
+
+            self.delta_x.append(dx)
+            self.delta_y.append(dy)
+    
+    def predictNextPosition(self):
+        num_centerpostion = len(self.centerPosition)
+
+        if num_centerpostion == 1:
+            self.predictedNextPosition[0] = self.centerPosition[-1][0]
+            self.predictedNextPosition[1] = self.centerPosition[-1][1]
+        elif num_centerpostion == 2:
+            self.predictedNextPosition[0] = self.centerPosition[-1][0] + self.delta_x[0]
+            self.predictedNextPosition[1] = self.centerPosition[-1][1] + self.delta_y[0]
+        elif num_centerpostion == 3:
+            sumOfXChanges = self.delta_x[1] * 2 + self.delta_x[0]
+            sumOfYChanges = self.delta_y[1] * 2 + self.delta_y[0]
+
+            self.predictedNextPosition[0] = self.centerPosition[-1][0] + round(sumOfXChanges / 3)
+            self.predictedNextPosition[1] = self.centerPosition[-1][1] + round(sumOfYChanges / 3)
+        elif num_centerpostion == 4:
+            sumOfXChanges = self.delta_x[2] * 3 + self.delta_x[1] * 2 + self.delta_x[0]
+            sumOfYChanges = self.delta_y[2] * 3 + self.delta_y[1] * 2 + self.delta_y[0]
+
+            self.predictedNextPosition[0] = self.centerPosition[-1][0] + round(sumOfXChanges / 6)
+            self.predictedNextPosition[1] = self.centerPosition[-1][1] + round(sumOfXChanges / 6)
+        elif num_centerpostion > 4:
+            num_delta_x = len(self.delta_x)
+            num_delta_y = len(self.delta_y)
+            
+            sumOfXChanges = self.delta_x[num_delta_x - 1] * 4 + self.delta_x[num_delta_x - 2] * 3 + self.delta_x[num_delta_x - 3] * 2 + self.delta_x[num_delta_x - 4]
+            sumOfYChanges = self.delta_y[num_delta_y - 1] * 4 + self.delta_y[num_delta_y - 2] * 3 + self.delta_y[num_delta_y - 3] * 2 + self.delta_y[num_delta_y - 4]
+
+            self.predictedNextPosition[0] = self.centerPosition[-1][0] + round(sumOfXChanges / 10)
+            self.predictedNextPosition[1] = self.centerPosition[-1][1] + round(sumOfYChanges / 10)
+    
+    def choose_directionality(self):
+        # print("positive_delta_x", self.count_positive_delta_x)
+        # print("negative_delta_x", self.count_negative_delta_x)
+        # print("positive_delta_y", self.count_positive_delta_y)
+        # print("negative_delta_y", self.count_negative_delta_y)
+
+        x_direct = "right" if self.count_positive_delta_x > self.count_negative_delta_x else "left"
+        y_direct = "bottom" if self.count_positive_delta_y > self.count_negative_delta_y else "top"
+
+        return x_direct, y_direct
 
 ocr_filter = re.compile("^(영)?(((강원|경기|경남|경북|광주|대구|대전|부산|서울|인천|전남|전북|제주|충남|충북)\d{2})|(\d{3})|(\d{2}))(가|나|다|라|마|거|너|더|러|머|버|서|어|저|고|노|도|로|모|보|소|오|조|구|누|두|루|무|부|수|우|주|기|니|디|리|미|비|시|이|지|바|사|아|자|카|파|타|차|배|영|하|허|호|히|육|공|해|국|합)\d{4}")
 class DetectionPredictor(BasePredictor):
@@ -99,14 +160,20 @@ class DetectionPredictor(BasePredictor):
         for c in det[:, 5].unique():
             n = (det[:, 5] == c).sum()  # detections per class
             log_string += f"{n} {self.model.names[int(c)]}{'s' * (n > 1)}, "
-        # ocr_result_manage
-        self.send_ocr_result(queue)
 
         # write
         gn = torch.tensor(im0.shape)[[1, 0, 1, 0]]  # normalization gain whwh
         for *xyxy, conf, cls in reversed(det):
             imc = im0.copy()
             self.ocr_image(imc, xyxy, conf)
+
+            # show track_id
+            # for blob in self.existed_blob:
+            #     label = str(blob.track_id)
+            #     x1, y1, x2, y2 = blob.bbox[-1]
+            #     self.annotator.box_label([x1, y1, x2, y2], label)
+
+            # self.track(imc, xyxy, conf)
             # with self.dt[3]:
             #     self.ocr_image(imc, xyxy, conf)
             # LOGGER.info(f"ocr:{self.dt[3].dt * 1E3:.1f}ms")
@@ -134,14 +201,19 @@ class DetectionPredictor(BasePredictor):
     def send_ocr_result(self, queue):
         if len(self.existed_blob) == 0:
             return
-
-        entry_direction = os.getenv("entry_direction", default="left")
+        global exit_direction
         del_index = []
         for idx, blob in enumerate(self.existed_blob):
             most_common_string=None
             blob.frame_num = blob.frame_num + 1
             if blob.frame_num > 15:
                 print("FRAME::15")
+                del_index.append(idx)
+
+                if len(blob.centerPosition) < 5:
+                    print("Not enough Tracking")
+                    continue
+
                 for mn in blob.machine_number:
                     if ocr_filter.match(mn) is not None:
                         most_common_string=mn
@@ -154,13 +226,14 @@ class DetectionPredictor(BasePredictor):
                 targetIndex = blob.machine_number.index(most_common_string)
                 now = datetime.now(timezone.utc).timestamp()
 
-                direction = ""
-                if len(blob.centerPosition) > 0:
-                    direction = "left" if blob.centerPosition[0][0] > blob.centerPosition[0][1] else "right"
-                else:
-                    direction = "left"
+                x_direct, y_direct = blob.choose_directionality()
+
+                print("x_direct", x_direct)
+                print("y_direct", y_direct)
                 
-                datekey = "entry_date" if entry_direction == direction else "exit_date"
+                datekey = "exit_date" if exit_direction == x_direct else "entry_date"
+
+                print("datekey", datekey)
 
                 img_io_crop = BytesIO()
                 img_io_full = BytesIO()
@@ -174,9 +247,8 @@ class DetectionPredictor(BasePredictor):
                                 "cropped_image": img_bytes_crop,
                                 datekey: now
                                 }
-                del_index.append(idx)
                 print("SEND::result->queue")
-                # queue.put_nowait(result_fetch)
+                queue.put_nowait(result_fetch)
             else:
                 continue
         
@@ -185,10 +257,8 @@ class DetectionPredictor(BasePredictor):
 
     def ocr_image(self, img, cordinates, conf):
         det_score = conf.item()
-        # print("det_score", det_score)
         if det_score < 0.6:
             return
-
         x1, y1, x2, y2 = int(cordinates[0]), int(cordinates[1]), int(cordinates[2]), int(cordinates[3])
         img_crop = img[y1:y2, x1:x2]
         img_full_RGB = img[:, :, ::-1]
@@ -198,60 +268,62 @@ class DetectionPredictor(BasePredictor):
         # print("ocr::result", result)
         # print("ocr::text", result[0])
         if len(self.existed_blob) == 0:
-            blob = TrackBlob([x1, y1, x2, y2], result[0], img_full_RGB, img_crop_RGB)
+            blob = TrackBlob([x1, y1, x2, y2], result[0], img_full_RGB, img_crop_RGB, self.track_id)
+            self.track_id += 1
             self.existed_blob.append(blob)
         else:
             flag=False
-            for blob in self.existed_blob:
-                currentCenterPosition = ((x1 + x2) / 2, (y1 + y2) / 2)
+            currentCenterPosition = ((x1 + x2) / 2, (y1 + y2) / 2)
+            leastDistance = 10000
+            indexOfLeastDistance = 0
+            
+            for idx, blob in enumerate(self.existed_blob):
                 existedCenterPosition = blob.centerPosition[-1]
                 distance = distance_between_points(currentCenterPosition, existedCenterPosition)
 
-                if distance < blob.dblCurrentDiagonalSize[-1]:
-                    # print("UPDATE::BLOB")
-                    blob.update([x1, y1, x2, y2], result[0], img_full_RGB, img_crop_RGB)
-                    flag=True
-                    break
+                if distance < leastDistance:
+                    indexOfLeastDistance = idx
+                    leastDistance = distance
+
+            if leastDistance < self.existed_blob[indexOfLeastDistance].dblCurrentDiagonalSize[-1]:
+                self.existed_blob[indexOfLeastDistance].update([x1, y1, x2, y2], result[0], img_full_RGB, img_crop_RGB)
+                flag=True
+
             if not flag:
-                new_blob = TrackBlob([x1, y1, x2, y2], result[0], img_full_RGB, img_crop_RGB)
+                new_blob = TrackBlob([x1, y1, x2, y2], result[0], img_full_RGB, img_crop_RGB, self.track_id)
+                self.track_id += 1
                 self.existed_blob.append(new_blob)
-        
-        # ---------------------------paddleocr----------------------------------
-        # gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        # for x in result[0]:
-        #     # print(x[1][0])
-        #     # print(x[1][1])
-        #     if self.ocr_result is None and 4 <= len(str(x[1][0])) <= 8:
-        #         self.ocr_result = {"score": int(x[1][1]), "text": x[1][0], "frame_num": 0, "frame_img": img }
-        #         continue
+    
+    # def track(self, img, cordinates, conf):
+    #     det_score = conf.item()
+    #     if det_score < 0.6:
+    #         return
+    #     detections = []
+    #     x1, y1, x2, y2 = int(cordinates[0]), int(cordinates[1]), int(cordinates[2]), int(cordinates[3])
+    #     # img_crop = img[y1:y2, x1:x2]
+    #     # img_full_RGB = img[:, :, ::-1]
+    #     # img_crop_RGB = img_crop[:, :, ::-1]
 
-        #     if 4 <= len(str(x[1][0])) <= 8 and self.ocr_result["score"] < int(x[1][1]):
-        #         self.ocr_result = {"score": int(x[1][1]), "text": x[1][0], "frame_num": 0, "frame_img": img }
+    #     # result = self.ocr.predict(img_crop)
+    #     # print(x1, y1, x2, y2)
+    #     detections.append([x1, y1, x2, y2, det_score])
 
-# @hydra.main(version_base=None, config_path=str(DEFAULT_CONFIG.parent), config_name=DEFAULT_CONFIG.name)
-# def set_config(cfg):
-#     cfg.model = './runs/detect/model_trained/weights/best.pt'
-#     cfg.imgsz = check_imgsz(cfg.imgsz, min_dim=2)  # check image size
+    #     self.tracker.update(img, detections)
 
-#     # rtsp = os.getenv("rtsp")
-#     rtsp = './ultralytics/yolo/v8/detect/stream_piece_0.mp4'
+    #     for track in self.tracker.tracks:
+    #         bbox = track.bbox
+    #         x1, y1, x2, y2 = bbox
+    #         # print(x1, y1, x2, y2)
+    #         track_id = track.track_id
+    #         mean = track.mean
+    #         # print("track_id", track_id)
+    #         # print("mean", mean)
+    #         label = str(track_id)
+    #         self.annotator.box_label([x1, y1, x2, y2], label)
 
-#     if rtsp is None:
-#         raise Exception("'rtsp' and 'rtsp2' are required")
-
-#     # cfg.source = os.getenv("rtsp")
-#     cfg.source = rtsp
-#     cfg.device = 'cuda:0'
-#     cfg.show = True
-#     cfg.save = False
-#     # print("asfasf", cfg)
-#     overrides = {}
-#     result = get_config(cfg, overrides)
-#     print("result", result)
-#     return result
-
-# @hydra.main(version_base=None, config_path=str(DEFAULT_CONFIG.parent), config_name=DEFAULT_CONFIG.name)
-def predict(mp_queue):
+def predict(mp_queue, rtsp, exit_direct):
+    global exit_direction
+    exit_direction = exit_direct
     with open(DEFAULT_CONFIG,encoding="utf8") as f:
         cfg = yaml.load(f, Loader=yaml.FullLoader)
 
@@ -259,7 +331,7 @@ def predict(mp_queue):
     cfg["imgsz"] = check_imgsz(cfg["imgsz"], min_dim=2)  # check image size
  
     # rtsp = os.getenv("rtsp")
-    rtsp = 'test_images/stream_piece_0.mp4'
+    # rtsp = 'test_images/stream_piece_0.mp4'
     # rtsp = 'rtsp://wg2b659c:adt@6400@10.172.177.3:554/h264'
     # rtsp = "rtsp://admin:adt@2102@223.48.2.77:554/cam/realmonitor?channel=1&subtype=1"
     # rtsp = "./test12.png"
@@ -268,7 +340,6 @@ def predict(mp_queue):
     if rtsp is None:
         raise Exception("'rtsp' and 'rtsp2' are required")
  
-    # cfg["source = os.getenv("rtsp")
     cfg["source"] = rtsp
     cfg["device"] = 'cuda:0'
     cfg["show"] = True
