@@ -1,0 +1,3 @@
+[submodule "LPRNet"]
+	path = LPRNet
+	url = ./LPRNet
