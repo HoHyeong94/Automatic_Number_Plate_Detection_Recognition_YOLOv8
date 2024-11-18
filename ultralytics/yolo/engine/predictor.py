@@ -160,7 +160,7 @@ class BasePredictor:
         self.device = device
 
         self.ocr = OcrPredictor()
-        self.existed_blob = []
+        self.existed_blob = set()
         # self.tracker = Tracker()
         self.track_id = 1
 

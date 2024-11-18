@@ -167,7 +167,7 @@ class DetectionPredictor(BasePredictor):
             imc = im0.copy()
             self.ocr_image(imc, xyxy, conf)
 
-            # show track_id
+            # # show track_id
             # for blob in self.existed_blob:
             #     label = str(blob.track_id)
             #     x1, y1, x2, y2 = blob.bbox[-1]
@@ -178,11 +178,11 @@ class DetectionPredictor(BasePredictor):
             #     self.ocr_image(imc, xyxy, conf)
             # LOGGER.info(f"ocr:{self.dt[3].dt * 1E3:.1f}ms")
             
-            if self.args.save_txt:  # Write to file
-                xywh = (ops.xyxy2xywh(torch.tensor(xyxy).view(1, 4)) / gn).view(-1).tolist()  # normalized xywh
-                line = (cls, *xywh, conf) if self.args.save_conf else (cls, *xywh)  # label format
-                with open(f'{self.txt_path}.txt', 'a') as f:
-                    f.write(('%g ' * len(line)).rstrip() % line + '\n')
+            # if self.args.save_txt:  # Write to file
+            #     xywh = (ops.xyxy2xywh(torch.tensor(xyxy).view(1, 4)) / gn).view(-1).tolist()  # normalized xywh
+            #     line = (cls, *xywh, conf) if self.args.save_conf else (cls, *xywh)  # label format
+            #     with open(f'{self.txt_path}.txt', 'a') as f:
+            #         f.write(('%g ' * len(line)).rstrip() % line + '\n')
 
             if self.args.save or self.args.save_crop or self.args.show:  # Add bbox to image
                 c = int(cls)  # integer class
@@ -203,16 +203,15 @@ class DetectionPredictor(BasePredictor):
             return
         global exit_direction
         del_index = []
-        for idx, blob in enumerate(self.existed_blob):
+        for blob in self.existed_blob:
             most_common_string=None
-            blob.frame_num = blob.frame_num + 1
+            # blob.frame_num = blob.frame_num + 1
+            blob.frame_num += 1
             if blob.frame_num > 15:
+                del_index.append(blob)
+            
+            if blob.frame_num > 15 and len(blob.centerPosition) > 5:
                 print("FRAME::15")
-                del_index.append(idx)
-
-                if len(blob.centerPosition) < 5:
-                    print("Not enough Tracking")
-                    continue
 
                 for mn in blob.machine_number:
                     if ocr_filter.match(mn) is not None:
@@ -253,11 +252,11 @@ class DetectionPredictor(BasePredictor):
                 continue
         
         for x in del_index:
-            del(self.existed_blob[x])
+            self.existed_blob.remove(x)
 
     def ocr_image(self, img, cordinates, conf):
         det_score = conf.item()
-        if det_score < 0.6:
+        if det_score < 0.5:
             return
         x1, y1, x2, y2 = int(cordinates[0]), int(cordinates[1]), int(cordinates[2]), int(cordinates[3])
         img_crop = img[y1:y2, x1:x2]
@@ -270,29 +269,29 @@ class DetectionPredictor(BasePredictor):
         if len(self.existed_blob) == 0:
             blob = TrackBlob([x1, y1, x2, y2], result[0], img_full_RGB, img_crop_RGB, self.track_id)
             self.track_id += 1
-            self.existed_blob.append(blob)
+            self.existed_blob.add(blob)
         else:
             flag=False
             currentCenterPosition = ((x1 + x2) / 2, (y1 + y2) / 2)
             leastDistance = 10000
             indexOfLeastDistance = 0
             
-            for idx, blob in enumerate(self.existed_blob):
+            for blob in self.existed_blob:
                 existedCenterPosition = blob.centerPosition[-1]
                 distance = distance_between_points(currentCenterPosition, existedCenterPosition)
 
                 if distance < leastDistance:
-                    indexOfLeastDistance = idx
+                    indexOfLeastDistance = blob
                     leastDistance = distance
 
-            if leastDistance < self.existed_blob[indexOfLeastDistance].dblCurrentDiagonalSize[-1]:
-                self.existed_blob[indexOfLeastDistance].update([x1, y1, x2, y2], result[0], img_full_RGB, img_crop_RGB)
+            if leastDistance < indexOfLeastDistance.dblCurrentDiagonalSize[-1]:
+                indexOfLeastDistance.update([x1, y1, x2, y2], result[0], img_full_RGB, img_crop_RGB)
                 flag=True
 
             if not flag:
                 new_blob = TrackBlob([x1, y1, x2, y2], result[0], img_full_RGB, img_crop_RGB, self.track_id)
                 self.track_id += 1
-                self.existed_blob.append(new_blob)
+                self.existed_blob.add(new_blob)
     
     # def track(self, img, cordinates, conf):
     #     det_score = conf.item()
@@ -327,7 +326,8 @@ def predict(mp_queue, rtsp, exit_direct):
     with open(DEFAULT_CONFIG,encoding="utf8") as f:
         cfg = yaml.load(f, Loader=yaml.FullLoader)
 
-    cfg["model"] = './runs/detect/model_trained_epoch_150/weights/best.pt'
+    # cfg["model"] = './runs/detect/model_trained_epoch_150/weights/best.pt'
+    cfg["model"] = './ultralytics/yolo/v8/detect/best.pt'
     cfg["imgsz"] = check_imgsz(cfg["imgsz"], min_dim=2)  # check image size
  
     # rtsp = os.getenv("rtsp")

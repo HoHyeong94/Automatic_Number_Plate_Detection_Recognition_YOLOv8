@@ -165,3 +165,4 @@ runs/
 *.zip
 deepsort_feature_extraction_model/
 test_images/
+*.mp4
