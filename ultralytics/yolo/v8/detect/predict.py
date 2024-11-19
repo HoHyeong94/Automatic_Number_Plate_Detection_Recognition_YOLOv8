@@ -113,7 +113,7 @@ ocr_filter = re.compile("^(영)?(((강원|경기|경남|경북|광주|대구|대
 class DetectionPredictor(BasePredictor):
 
     def get_annotator(self, img):
-        return Annotator(img, line_width=self.args.line_thickness, example=str(self.model.names))
+        return Annotator(cv2.blur(img,(30,30)), line_width=self.args.line_thickness, example=str(self.model.names))
 
     def preprocess(self, img):
         img = torch.from_numpy(img).to(self.model.device)
