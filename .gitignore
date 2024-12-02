@@ -167,3 +167,5 @@ deepsort_feature_extraction_model/
 test_images/
 *.mp4
 deep_sort/
+testimg
+test.txt

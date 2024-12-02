@@ -8,7 +8,7 @@ from ultralytics.yolo.utils import DEFAULT_CONFIG, ROOT, ops, LOGGER
 from ultralytics.yolo.utils.checks import check_imgsz
 from ultralytics.yolo.utils.plotting import Annotator, colors, save_one_box
 
-# import cv2
+import cv2
 # import os
 import re
 from ultralytics.yolo.configs import get_config
@@ -113,7 +113,8 @@ ocr_filter = re.compile("^(영)?(((강원|경기|경남|경북|광주|대구|대
 class DetectionPredictor(BasePredictor):
 
     def get_annotator(self, img):
-        return Annotator(cv2.blur(img,(30,30)), line_width=self.args.line_thickness, example=str(self.model.names))
+        return Annotator(img, line_width=self.args.line_thickness, example=str(self.model.names))
+        # return Annotator(cv2.blur(img,(30,30)), line_width=self.args.line_thickness, example=str(self.model.names))
 
     def preprocess(self, img):
         img = torch.from_numpy(img).to(self.model.device)
@@ -168,10 +169,10 @@ class DetectionPredictor(BasePredictor):
             self.ocr_image(imc, xyxy, conf)
 
             # # show track_id
-            # for blob in self.existed_blob:
-            #     label = str(blob.track_id)
-            #     x1, y1, x2, y2 = blob.bbox[-1]
-            #     self.annotator.box_label([x1, y1, x2, y2], label)
+            for blob in self.existed_blob:
+                label = str(blob.track_id)
+                x1, y1, x2, y2 = blob.bbox[-1]
+                self.annotator.box_label([x1, y1, x2, y2], label)
 
             # self.track(imc, xyxy, conf)
             # with self.dt[3]:
@@ -184,17 +185,17 @@ class DetectionPredictor(BasePredictor):
             #     with open(f'{self.txt_path}.txt', 'a') as f:
             #         f.write(('%g ' * len(line)).rstrip() % line + '\n')
 
-            if self.args.save or self.args.save_crop or self.args.show:  # Add bbox to image
-                c = int(cls)  # integer class
-                label = None if self.args.hide_labels else (
-                    self.model.names[c] if self.args.hide_conf else f'{self.model.names[c]} {conf:.2f}')
-                self.annotator.box_label(xyxy, label, color=colors(c, True))
-            if self.args.save_crop:
-                imc = im0.copy()
-                save_one_box(xyxy,
-                             imc,
-                             file=self.save_dir / 'crops' / self.model.model.names[c] / f'{self.data_path.stem}.jpg',
-                             BGR=True)
+            # if self.args.save or self.args.save_crop or self.args.show:  # Add bbox to image
+            #     c = int(cls)  # integer class
+            #     label = None if self.args.hide_labels else (
+            #         self.model.names[c] if self.args.hide_conf else f'{self.model.names[c]} {conf:.2f}')
+            #     self.annotator.box_label(xyxy, label, color=colors(c, True))
+            # if self.args.save_crop:
+            #     imc = im0.copy()
+            #     save_one_box(xyxy,
+            #                  imc,
+            #                  file=self.save_dir / 'crops' / self.model.model.names[c] / f'{self.data_path.stem}.jpg',
+            #                  BGR=True)
 
         return log_string
     
@@ -326,8 +327,8 @@ def predict(mp_queue, rtsp, exit_direct):
     with open(DEFAULT_CONFIG,encoding="utf8") as f:
         cfg = yaml.load(f, Loader=yaml.FullLoader)
 
-    # cfg["model"] = './runs/detect/model_trained_epoch_150/weights/best.pt'
-    cfg["model"] = './ultralytics/yolo/v8/detect/best.pt'
+    cfg["model"] = './runs/detect/model_trained_epoch_150/weights/best.pt'
+    # cfg["model"] = './ultralytics/yolo/v8/detect/best.pt'
     cfg["imgsz"] = check_imgsz(cfg["imgsz"], min_dim=2)  # check image size
  
     # rtsp = os.getenv("rtsp")

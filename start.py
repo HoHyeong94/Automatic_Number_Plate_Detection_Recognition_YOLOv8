@@ -15,35 +15,50 @@ async def fetchWorker(queue):
     # domain = os.getenv("domain", default="NEXIVIL-dabeom.local")
     # protocol = os.getenv("protocol", default="https")
 
-    targetid = args.targetid
-    protocol = args.protocol
-    domain = args.domain
+    # targetid = args.targetid
+    # protocol = args.protocol
+    # domain = args.domain
     
-    print("targetid", targetid)
-    print("domain", domain)
-    print("protocol", protocol)
-    connect_process = ConnectProcess(targetid, domain, protocol)
-    isMatch = connect_process.verify_pb_key()
-    if isMatch is False:
-        raise Exception("Pollution 'targetid' value.")
-    connect_process.generate_ssl()
+    # print("targetid", targetid)
+    # print("domain", domain)
+    # print("protocol", protocol)
+    # connect_process = ConnectProcess(targetid, domain, protocol)
+    # isMatch = connect_process.verify_pb_key()
+    # if isMatch is False:
+    #     raise Exception("Pollution 'targetid' value.")
+    # connect_process.generate_ssl()
 
-    print("SUCESS::sync")
+    # print("SUCESS::sync")
+    with open("./test.txt", "a",encoding='utf-8') as myfile:
+        while True:
+            data = await queue.get()
+            print("GETDATA::from_fetch_queue", data is not None)
+            if data is None:
+                queue.task_done()
+                continue
+            try:
+                _machine_number=data.get('machine_number',"")
+                machine_number="인식불가" if _machine_number.strip()=="" else _machine_number
+                print(_machine_number,machine_number)
+                entry_date=data.get('entry_date',"")
+                exit_date=data.get('exit_date',"")
+                myfile.write(f'{machine_number} {entry_date or "-"} {exit_date or "-"}\n')
 
-    while True:
-        data = await queue.get()
-        print("GETDATA::from_fetch_queue", data is not None)
-        if data is None:
+                if 'entry_date' in data:
+                    with open(f'./testimg/full_in_{entry_date}_{machine_number}.jpg', "wb") as file:
+                        file.write(data.get('full_image'))
+                    with open(f'./testimg/lp_in_{entry_date}_{machine_number}.jpg', "wb") as file:
+                        file.write(data.get('cropped_image'))
+                else:
+                    with open(f'./testimg/full_out_{exit_date}_{machine_number}.jpg', "wb") as file:
+                        file.write(data.get('full_image'))
+                    with open(f'./testimg/lp_out_{exit_date}_{machine_number}.jpg', "wb") as file:
+                        file.write(data.get('cropped_image'))
+              
+                    
+            except Exception as e:
+                print(e)
             queue.task_done()
-            continue
-        try:
-            if 'entry_date' in data:
-                connect_process.fetch_with_target("cctv", "POST", data)
-            else:
-                connect_process.fetch_with_target("cctv", "PATCH", data)
-        except Exception as e:
-            print(e)
-        queue.task_done()
 
 def queue_bridge(mp_queue, fetch_queue, loop, stop_loop):
     while True:
@@ -91,7 +106,7 @@ async def main():
     tasks = []
     tasks.append(create_task(fetchWorker(fetch_queue)))
     await gather(*tasks, return_exceptions=True)
-
+    print("AA")
     stop_loop = True
     mp_queue.put_nowait(None)
     for t in tasks:
@@ -113,10 +128,10 @@ if __name__ == "__main__":
         description='',
         epilog='')
     parser.add_argument('-w', '--worker', default=1, type=int)
-    parser.add_argument("--rtsp", type=str, required=False, default="rtsp://admin:adt@2102@223.48.2.77:554/cam/realmonitor?channel=1&subtype=1")
-    parser.add_argument("--targetid", type=str, required=False, default="6gZ8Xn5hl0110Eu8APM6UGgEBZ6HwZSbMpTg2ZYoqlo")
+    parser.add_argument("--rtsp", type=str, required=False, default="rtsp://admin1:adt@6400@223.48.4.67:554/h264-2")
+    parser.add_argument("--targetid", type=str, required=False, default="sXfH4mrlfE5ltACJ6gzv0RqvycXvj0l6swPZB6yHQL4")
     parser.add_argument("--protocol", type=str, required=False, default="https")
-    parser.add_argument("--domain", type=str, required=False, default="NEXIVIL-dabeom.local")
+    parser.add_argument("--domain", type=str, required=False, default="desktop-dc06siv.local")
     parser.add_argument("--exit_direct", type=str, required=False, default="right")
     
     args = parser.parse_args()
