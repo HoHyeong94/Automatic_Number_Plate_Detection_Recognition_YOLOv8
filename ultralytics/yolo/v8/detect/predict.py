@@ -211,16 +211,19 @@ class DetectionPredictor(BasePredictor):
             if blob.frame_num > 15:
                 del_index.append(blob)
             
-            if blob.frame_num > 15 and len(blob.centerPosition) > 5:
+            if blob.frame_num > 15 and len(blob.centerPosition) < 3:
+                print("err:: centerPosition < 3")
+            if blob.frame_num > 15 and len(blob.centerPosition) >= 3:
                 print("FRAME::15")
 
-                for mn in blob.machine_number:
-                    if ocr_filter.match(mn) is not None:
-                        most_common_string=mn
+                counter = Counter(blob.machine_number).most_common()
+                for lp_tuple,_ in counter:
+                    if ocr_filter.match(lp_tuple) is not None:
+                        most_common_string = lp_tuple
                         break
                 if most_common_string is None:
-                    counter = Counter(blob.machine_number)
-                    most_common_string, _ = counter.most_common(1)[0]
+                    most_common_string, _ = counter[0]
+                   
                 print("most_common_string", most_common_string)
 
                 targetIndex = blob.machine_number.index(most_common_string)
